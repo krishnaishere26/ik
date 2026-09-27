@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>5-Bar Walking Gait — Self-Learning IK</title>
+<style>
+  :root{
+    --bg:#060911; --panel:#0c121c; --line:#1c2634;
+    --txt:#dbe6f4; --muted:#7c8ba1;
+    --cyan:#22d3ee; --blue:#38bdf8; --violet:#a78bfa;
+    --emerald:#34d399; --amber:#fbbf24; --red:#f87171;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  #app{ display:flex; height:100vh; width:100vw; }
+
+  #stage{
+    position:relative; flex:1 1 auto; min-width:0; overflow:hidden;
+    background: radial-gradient(1200px 900px at 50% 40%, #0d1420 0%, #060911 70%);
+  }
+  #cv{
+    position:absolute; inset:0;
+    display:block; touch-action:none; cursor:crosshair;
+  }
+
+  /* ---------- HUD (left) ---------- */
+  #hud{
+    position:absolute; top:16px; left:16px; width:268px;
+    padding:14px 16px; border-radius:14px;
+    background:rgba(9,14,22,0.78);
+    border:1px solid rgba(56,189,248,0.16);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 14px 40px rgba(0,0,0,0.5);
+    font-size:12px; pointer-events:none; user-select:none;
+  }
+  /* ---------- HUD (right) — dynamics ---------- */
+  #hud2{
+    position:absolute; top:16px; right:16px; width:246px;
+    padding:14px 16px; border-radius:14px;
+    background:rgba(9,14,22,0.78);
+    border:1px solid rgba(167,139,250,0.22);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 14px 40px rgba(0,0,0,0.5);
+    font-size:12px; pointer-events:none; user-select:none;
+  }
+  .hud-title{
+    font-size:10px; letter-spacing:0.18em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:10px; font-weight:600;
+  }
+  .row{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:10px; padding:4px 0;
+    border-bottom:1px dashed rgba(124,139,161,0.13);
+  }
+  .row:last-child{ border-bottom:none; }
+  .row span{ color:var(--muted); font-size:11.5px; }
+  .row b{ font-family:var(--mono); font-size:12px; font-weight:600; color:var(--txt); }
+  .ok{ color:var(--emerald) !important; }
+  .warn{ color:var(--amber) !important; }
+  .bad{ color:var(--red) !important; }
+  .cy{ color:var(--cyan) !important; }
+  .vi{ color:var(--violet) !important; }
+  .sm{ font-size:10px !important; font-weight:400 !important; color:var(--muted) !important; }
+
+  #hint{
+    position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+    font-size:11.5px; letter-spacing:0.06em; color:var(--muted);
+    background:rgba(9,14,22,0.65);
+    border:1px solid rgba(124,139,161,0.14);
+    padding:7px 16px; border-radius:100px;
+    pointer-events:none; user-select:none;
+    backdrop-filter:blur(8px); white-space:nowrap;
+  }
+  #hint b{ color:var(--cyan); font-weight:600; }
+
+  #panel{
+    flex:0 0 330px; width:330px;
+    background:linear-gradient(180deg,#0c121c 0%, #080d15 100%);
+    border-left:1px solid var(--line);
+    padding:24px 20px 32px;
+    overflow-y:auto;
+  }
+  #panel::-webkit-scrollbar{ width:8px; }
+  #panel::-webkit-scrollbar-thumb{ background:#1b2532; border-radius:4px; }
+
+  #panel header{ margin-bottom:22px; }
+  #panel h1{
+    font-size:16px; font-weight:700; letter-spacing:-0.01em;
+    background:linear-gradient(92deg,#e8f4ff,#7dd3fc 55%,#a78bfa);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    margin-bottom:5px;
+  }
+  #panel .sub{ font-size:11px; color:var(--muted); line-height:1.5; }
+
+  .group{ margin-bottom:22px; }
+  .group-title{
+    font-size:10px; font-weight:700; letter-spacing:0.18em;
+    text-transform:uppercase; color:var(--muted); margin-bottom:13px;
+    display:flex; align-items:center; gap:9px;
+  }
+  .group-title::after{
+    content:''; flex:1; height:1px;
+    background:linear-gradient(90deg, rgba(124,139,161,0.28), transparent);
+  }
+
+  .chart-title::after{ display:none; }
+  .chart-title-line{
+    flex:1; height:1px;
+    background:linear-gradient(90deg, rgba(124,139,161,0.28), transparent);
+  }
+  .chart-actions{ display:flex; gap:6px; }
+
+  .icon-btn{
+    background:transparent;
+    border:1px solid rgba(124,139,161,0.22);
+    border-radius:6px;
+    color:var(--muted);
+    width:22px; height:22px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:11px; cursor:pointer;
+    transition:all .14s ease;
+    font-family:inherit; padding:0; line-height:1;
+  }
+  .icon-btn:hover{
+    color:var(--cyan);
+    border-color:rgba(56,189,248,0.5);
+    background:rgba(56,189,248,0.08);
+  }
+  .icon-btn:active{ transform:translateY(1px); }
+
+  .chart-body{ margin-top:4px; }
+  .chart-section.collapsed .chart-body{ display:none; }
+
+  #ml-chart{
+    display:block;
+    width:100%;
+    height:auto;
+    border-radius:8px;
+    background:rgba(10,16,25,0.6);
+  }
+
+  #chart-float{
+    position:absolute;
+    width:420px;
+    background:rgba(9,14,22,0.94);
+    border:1px solid rgba(56,189,248,0.28);
+    border-radius:12px;
+    backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+    box-shadow:0 16px 48px rgba(0,0,0,0.65);
+    z-index:50;
+    overflow:hidden;
+    user-select:none;
+  }
+  #chart-float.hidden{ display:none; }
+
+  .float-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 10px 8px 14px;
+    font-size:10px; letter-spacing:0.15em; text-transform:uppercase;
+    color:var(--muted); font-weight:600;
+    border-bottom:1px solid rgba(124,139,161,0.14);
+    background:rgba(56,189,248,0.05);
+    cursor:grab;
+  }
+  .float-head:active{ cursor:grabbing; }
+  .float-actions{ display:flex; gap:6px; }
+  .float-body{ padding:10px; }
+
+  .ctrl{ margin-bottom:15px; }
+  .ctrl:last-child{ margin-bottom:0; }
+  .ctrl label{
+    display:flex; align-items:baseline; justify-content:space-between;
+    font-size:11.5px; color:#a9b8cc; margin-bottom:8px; gap:8px;
+  }
+  .ctrl label .sym{ color:var(--muted); font-family:var(--mono); font-size:10.5px; }
+  .ctrl label b{
+    font-family:var(--mono); font-size:11.5px; font-weight:600;
+    color:var(--cyan); min-width:46px; text-align:right;
+  }
+
+  input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:4px; border-radius:99px;
+    background:linear-gradient(90deg,#1d4e5e,#1c2634);
+    outline:none; cursor:pointer; display:block;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #a5f3fc, var(--cyan));
+    border:2px solid #06131a;
+    box-shadow:0 0 12px rgba(34,211,238,0.55);
+    transition:transform .12s ease;
+  }
+  input[type=range]::-webkit-slider-thumb:hover{ transform:scale(1.16); }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%;
+    background:var(--cyan); border:2px solid #06131a;
+    box-shadow:0 0 12px rgba(34,211,238,0.55); cursor:pointer;
+  }
+  input[type=range]::-moz-range-track{ height:4px; border-radius:99px; background:#1c2634; }
+
+  .toggles{ display:flex; flex-direction:column; gap:10px; }
+  .toggle{
+    display:flex; align-items:center; gap:10px;
+    font-size:11.5px; color:#a9b8cc; cursor:pointer; user-select:none;
+  }
+  .toggle input{
+    -webkit-appearance:none; appearance:none;
+    width:34px; height:19px; border-radius:99px;
+    background:#1c2634; position:relative; cursor:pointer;
+    transition:background .18s ease; flex:0 0 34px;
+    border:1px solid #26313f;
+  }
+  .toggle input::after{
+    content:''; position:absolute; top:2px; left:2px;
+    width:13px; height:13px; border-radius:50%;
+    background:#5b6b80; transition:transform .18s ease, background .18s ease;
+  }
+  .toggle input:checked{ background:rgba(34,211,238,0.22); border-color:rgba(34,211,238,0.5); }
+  .toggle input:checked::after{ transform:translateX(15px); background:var(--cyan); }
+
+  .btn{
+    padding:10px 12px; border-radius:9px;
+    background:rgba(56,189,248,0.09);
+    border:1px solid rgba(56,189,248,0.28);
+    color:#9fe7ff; font-size:11px; font-weight:600;
+    letter-spacing:0.06em; text-transform:uppercase;
+    cursor:pointer; transition:all .16s ease; font-family:inherit;
+  }
+  .btn:hover{ background:rgba(56,189,248,0.17); border-color:rgba(56,189,248,0.55); }
+  .btn.active{ background:rgba(52,211,153,0.16);
+               border-color:rgba(52,211,153,0.6); color:#6ee7b7; }
+  .btn.ghost{ background:transparent; border-color:rgba(124,139,161,0.25);
+              color:var(--muted); }
+  .btn:active{ transform:translateY(1px); }
+
+  /* Walking button: distinct green style */
+  #walk-toggle{
+    width:100%; margin-top:14px; padding:12px 14px;
+    background:rgba(52,211,153,0.12);
+    border:1px solid rgba(52,211,153,0.45);
+    color:#6ee7b7;
+    font-size:11.5px; letter-spacing:0.1em;
+  }
+  #walk-toggle:hover{
+    background:rgba(52,211,153,0.2);
+    border-color:rgba(52,211,153,0.75);
+  }
+  #walk-toggle.paused{
+    background:rgba(251,191,36,0.12);
+    border-color:rgba(251,191,36,0.5);
+    color:#fbbf24;
+  }
+  #walk-toggle.paused:hover{
+    background:rgba(251,191,36,0.2);
+    border-color:rgba(251,191,36,0.75);
+  }
+
+  .legend{ display:flex; flex-direction:column; gap:9px; }
+  .legend-item{ display:flex; align-items:center; gap:10px; font-size:11px; color:#93a3b8; }
+  .swatch{ width:22px; height:5px; border-radius:99px; flex:0 0 22px; }
+  .swatch.cyan{ background:var(--blue); box-shadow:0 0 9px rgba(56,189,248,0.6); }
+  .swatch.violet{ background:var(--violet); box-shadow:0 0 9px rgba(167,139,250,0.6); }
+  .swatch.emerald{ background:var(--emerald); box-shadow:0 0 9px rgba(52,211,153,0.6); }
+  .swatch.amber{ background:var(--amber); box-shadow:0 0 9px rgba(251,191,36,0.6); }
+
+  .note{
+    font-size:10.5px; line-height:1.65; color:#5f6f85;
+    border-left:2px solid #1e2836; padding-left:11px; margin-top:6px;
+  }
+  .ml-row{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:10px; padding:5px 0;
+    border-bottom:1px dashed rgba(124,139,161,0.13);
+    font-size:11.5px;
+  }
+  .ml-row:last-child{ border-bottom:none; }
+  .ml-row span{ color:var(--muted); }
+  .ml-row b{ font-family:var(--mono); font-size:11.5px; font-weight:600; }
+
+  @media (max-width: 820px){
+    #app{ flex-direction:column; }
+    #stage{ flex:1 1 auto; min-height:0; }
+    #panel{ flex:0 0 auto; width:100%; height:48%;
+            border-left:none; border-top:1px solid var(--line);
+            padding:16px 16px 26px; }
+    #hud{ width:220px; font-size:11px; top:12px; left:12px; }
+    #hud2{ width:200px; font-size:11px; top:12px; right:12px; }
+    #hint{ display:none; }
+    #chart-float{ width:340px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+
+    <div id="hud">
+      <div class="hud-title">Telemetry</div>
+      <div class="row"><span>Target P</span><b id="t-tgt">—</b></div>
+      <div class="row"><span>Actual EE</span><b id="t-ee" class="ok">—</b></div>
+      <div class="row"><span>Motor A · θ<sub>A</sub></span><b id="t-a" class="cy">—</b></div>
+      <div class="row"><span>Motor B · θ<sub>B</sub></span><b id="t-b" class="vi">—</b></div>
+      <div class="row"><span>Tracking error</span><b id="t-err">—</b></div>
+      <div class="row"><span>Policy</span><b id="t-mode">Analytic</b></div>
+    </div>
+
+    <div id="hud2">
+      <div class="hud-title">Dynamics · static estimate</div>
+      <div class="row"><span>ω<sub>A</sub></span><b id="d-wa" class="cy">—</b></div>
+      <div class="row"><span>ω<sub>B</sub></span><b id="d-wb" class="vi">—</b></div>
+      <div class="row"><span>τ<sub>A</sub></span><b id="d-ta" class="cy">—</b></div>
+      <div class="row"><span>τ<sub>B</sub></span><b id="d-tb" class="vi">—</b></div>
+      <div class="row"><span class="sm" style="font-style:italic;">50/50 load split, massless links</span><span></span></div>
+    </div>
+
+    <div id="hint">
+      <b>Drag the end-effector</b> to reposition the walker · release to walk around the new centre
+    </div>
+
+    <div id="chart-float" class="hidden">
+      <div class="float-head" id="float-head">
+        <span>Training Progress</span>
+        <div class="float-actions">
+          <button class="icon-btn" id="float-dock" title="Dock back to sidebar">⤓</button>
+        </div>
+      </div>
+      <div class="float-body" id="float-body"></div>
+    </div>
+  </div>
+
+  <aside id="panel">
+    <header>
+      <h1>5-Bar Walker · Self-Learning IK</h1>
+      <p class="sub">Flipped parallel linkage tracing a walking circle · RL policy trained by reward alone</p>
+    </header>
+
+    <section class="group">
+      <div class="group-title">Geometry</div>
+      <div class="ctrl">
+        <label>Motor spacing <span class="sym">d</span> <b id="v-d">60</b></label>
+        <input type="range" id="s-d" min="40" max="420" step="1" value="60">
+      </div>
+      <div class="ctrl">
+        <label>Proximal link <span class="sym">L1</span> <b id="v-l1">320</b></label>
+        <input type="range" id="s-l1" min="50" max="320" step="1" value="320">
+      </div>
+      <div class="ctrl">
+        <label>Floating link <span class="sym">L2</span> <b id="v-l2">320</b></label>
+        <input type="range" id="s-l2" min="50" max="320" step="1" value="320">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-title">Gait</div>
+      <div class="ctrl">
+        <label>Circle radius <b id="v-gr">50</b></label>
+        <input type="range" id="s-gr" min="15" max="120" step="1" value="50">
+      </div>
+      <div class="ctrl">
+        <label>Centre Y <b id="v-gy">−250</b></label>
+        <input type="range" id="s-gy" min="-350" max="-120" step="5" value="-250">
+      </div>
+      <div class="ctrl">
+        <label>Speed <b id="v-sp">4.0</b></label>
+        <input type="range" id="s-sp" min="0.5" max="10" step="0.1" value="4">
+      </div>
+
+      <button id="walk-toggle" class="btn">⏸ &nbsp;Pause Walking</button>
+    </section>
+
+    <section class="group">
+      <div class="group-title">Dynamics</div>
+      <div class="ctrl">
+        <label>Load mass at foot <span class="sym">m</span> <b id="v-mass">0.50</b></label>
+        <input type="range" id="s-mass" min="0.05" max="3" step="0.05" value="0.5">
+      </div>
+      <p class="note">
+        The right-hand panel shows per-motor angular velocity (ω) and the
+        static torque (τ) required to hold the load, computed from the
+        lever arms A→P and B→P with a 50/50 load split.
+      </p>
+    </section>
+
+    <section class="group">
+      <div class="group-title">Reinforcement Learning</div>
+      <div class="ml-row"><span>Generation</span><b id="ml-gen">0</b></div>
+      <div class="ml-row"><span>Best reward</span><b id="ml-fit" class="cy">—</b></div>
+      <div class="ml-row"><span>Mean EE error</span><b id="ml-err">—</b></div>
+      <div class="ml-row"><span>Active policy</span><b id="ml-mode">Analytic</b></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;">
+        <button id="ml-train" class="btn">Train</button>
+        <button id="ml-use"   class="btn">Use Learned</button>
+      </div>
+      <button id="ml-reset" class="btn ghost" style="margin-top:8px;width:100%;">
+        Reset Policy
+      </button>
+
+      <p class="note" style="margin-top:12px;">
+        Policy is a 2→16→16→2 MLP. CEM samples a population of weight vectors,
+        scores each by mean squared end-effector error from forward kinematics
+        (no analytic teacher), and refits the search distribution onto the
+        elites each generation.
+      </p>
+    </section>
+
+    <section class="group">
+      <div class="group-title">Display</div>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="c-grid" checked> Grid &amp; origin</label>
+        <label class="toggle"><input type="checkbox" id="c-ws" checked> Reachable workspace</label>
+        <label class="toggle"><input type="checkbox" id="c-path" checked> Desired gait circle</label>
+        <label class="toggle"><input type="checkbox" id="c-trail" checked> Traced EE path</label>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-title">Legend</div>
+      <div class="legend">
+        <div class="legend-item"><span class="swatch cyan"></span> Driven links A1 / B1</div>
+        <div class="legend-item"><span class="swatch violet"></span> Floating links A2 / B2</div>
+        <div class="legend-item"><span class="swatch emerald"></span> Actual end-effector</div>
+        <div class="legend-item"><span class="swatch amber"></span> Gait circle / centre</div>
+      </div>
+    </section>
+
+    <section class="group">
+      <button id="reset" class="btn ghost" style="width:100%;">Reset to Defaults</button>
+    </section>
+
+    <section class="group chart-section collapsed" id="chart-section">
+      <div class="group-title chart-title">
+        <span>Training Progress</span>
+        <span class="chart-title-line"></span>
+        <div class="chart-actions">
+          <button class="icon-btn" id="chart-pop" title="Pop out to canvas">⤢</button>
+          <button class="icon-btn" id="chart-collapse" title="Expand">▸</button>
+        </div>
+      </div>
+      <div class="chart-body" id="chart-body">
+        <div id="chart-host">
+          <canvas id="ml-chart" width="290" height="66"></canvas>
+        </div>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const TAU = Math.PI * 2;
+  const canvas = document.getElementById('cv');
+  const ctx = canvas.getContext('2d', { alpha: true });
+
+  /* =========================================================
+     STATE
+     ========================================================= */
+  const DEFAULTS = { d: 60, L1: 320, L2: 320, gR: 50, gCy: -250, speed: 4, mass: 0.5 };
+
+  const state = {
+    d:  DEFAULTS.d,
+    L1: DEFAULTS.L1,
+    L2: DEFAULTS.L2,
+    showGrid: true,
+    showWorkspace: true,
+    showPath: true,
+    showTrail: true,
+  };
+
+  const gait = {
+    cx: 0,                 // NEW — circle centre X
+    cy: DEFAULTS.gCy,
+    radius: DEFAULTS.gR,
+    speed: DEFAULTS.speed,
+    phase: -Math.PI / 2,
+    playing: true,         // NEW
+  };
+
+  const dynamics = {
+    loadMass: DEFAULTS.mass,   // kg
+    g: 9.81,
+  };
+
+  /* Velocity + torque per motor */
+  const motorState = {
+    A: { prevTheta: null, thetaDot: 0, torque: 0 },
+    B: { prevTheta: null, thetaDot: 0, torque: 0 },
+  };
+
+  /* Drag */
+  const drag = {
+    active: false,
+    hovering: false,
+    manual: null,
+    offset: { x: 0, y: 0 },
+  };
+  let lastEffectorWorld = null;
+
+  /* Settle animation after drop */
+  const settle = {
+    active: false,
+    t: 0,
+    duration: 0.32,
+    from: null,
+    to: null,
+  };
+
+  const trail = [];
+  const TRAIL_MAX = 260;
+
+  /* =========================================================
+     VIEW TRANSFORM
+     ========================================================= */
+  let W = 800, H = 600, DPR = 1;
+  let ox = 400, oy = 300, scale = 1;
+
+  const w2sx = (x) => ox + x * scale;
+  const w2sy = (y) => oy - y * scale;
+
+  function computeView() {
+    const d = state.d, L1 = state.L1;
+    const gR = gait.radius, gCy = gait.cy;
+
+    const elbowX = Math.max(L1 * 1.12, d / 2 + 60);
+    const elbowY = L1 * 0.78;
+
+    const contentLeft  = -(elbowX + 40);
+    const contentRight =  (elbowX + 40);
+    const contentTop   =  30;
+    const contentBot   = Math.min(gCy - gR, -elbowY) - 45;
+
+    const contentW = contentRight - contentLeft;
+    const contentH = contentTop - contentBot;
+    const contentCy = (contentTop + contentBot) / 2;
+
+    const padX = 46, padY = 54;
+    const sx = (W - 2 * padX) / contentW;
+    const sy = (H - 2 * padY) / contentH;
+    scale = Math.max(0.04, Math.min(sx, sy));
+
+    ox = W / 2;
+    oy = H / 2 + contentCy * scale;
+  }
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.max(1, Math.round(rect.width));
+    H = Math.max(1, Math.round(rect.height));
+    canvas.width  = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    computeView();
+  }
+
+  /* =========================================================
+     KINEMATICS
+     ========================================================= */
+  function circleIntersect(c1, r1, c2, r2, side) {
+    const dx = c2.x - c1.x;
+    const dy = c2.y - c1.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-9) return null;
+    if (dist > r1 + r2 + 1e-6) return null;
+    if (dist < Math.abs(r1 - r2) - 1e-6) return null;
+
+    const a = (r1 * r1 - r2 * r2 + dist * dist) / (2 * dist);
+    const h = Math.sqrt(Math.max(0, r1 * r1 - a * a));
+    const mx = c1.x + (a * dx) / dist;
+    const my = c1.y + (a * dy) / dist;
+    const nx = -dy / dist;
+    const ny =  dx / dist;
+    return { x: mx + side * h * nx, y: my + side * h * ny };
+  }
+
+  function clampToWorkspace(p) {
+    const d = state.d, L1 = state.L1, L2 = state.L2;
+    const A = { x: -d / 2, y: 0 };
+    const B = { x:  d / 2, y: 0 };
+    const rMax = L1 + L2 - 1e-3;
+    const rMin = Math.abs(L1 - L2) + 1e-3;
+
+    let x = p.x, y = p.y;
+    for (let iter = 0; iter < 48; iter++) {
+      let moved = false;
+      for (let k = 0; k < 2; k++) {
+        const C = k === 0 ? A : B;
+        let dx = x - C.x, dy = y - C.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < 1e-9) { dx = 0; dy = 1; dist = 1; }
+        let goal = dist;
+        if (dist > rMax) goal = rMax;
+        else if (dist < rMin) goal = rMin;
+        if (Math.abs(goal - dist) > 1e-7) {
+          x = C.x + (dx / dist) * goal;
+          y = C.y + (dy / dist) * goal;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    return { x, y };
+  }
+
+  function computeSolution(P) {
+    const d = state.d, L1 = state.L1, L2 = state.L2;
+    const A = { x: -d / 2, y: 0 };
+    const B = { x:  d / 2, y: 0 };
+    const JA = circleIntersect(A, L1, P, L2, -1);
+    const JB = circleIntersect(B, L1, P, L2, +1);
+    const thetaA = JA ? Math.atan2(JA.y - A.y, JA.x - A.x) : null;
+    const thetaB = JB ? Math.atan2(JB.y - B.y, JB.x - B.x) : null;
+    return { A, B, JA, JB, thetaA, thetaB, valid: !!(JA && JB) };
+  }
+
+  function forwardKinematics(tA, tB) {
+    const d = state.d, L1 = state.L1, L2 = state.L2;
+    const A = { x: -d / 2, y: 0 };
+    const B = { x:  d / 2, y: 0 };
+    const JA = { x: A.x + L1 * Math.cos(tA), y: A.y + L1 * Math.sin(tA) };
+    const JB = { x: B.x + L1 * Math.cos(tB), y: B.y + L1 * Math.sin(tB) };
+    const P1 = circleIntersect(JA, L2, JB, L2, +1);
+    const P2 = circleIntersect(JA, L2, JB, L2, -1);
+    if (!P1 && !P2) return null;
+    if (!P1) return P2;
+    if (!P2) return P1;
+    return P1.y <= P2.y ? P1 : P2;
+  }
+
+  /* =========================================================
+     DYNAMICS  —  velocity + static torque estimate
+     ========================================================= */
+  function updateDynamics(thetaA, thetaB, Pactual, dt) {
+    const smooth = 0.25;
+
+    // Angular velocity (rad/s) — numerical derivative with smoothing
+    const updateVel = (m, theta) => {
+      if (theta === null || theta === undefined || !isFinite(theta)) return;
+      if (m.prevTheta !== null && dt > 1e-6) {
+        let dTheta = theta - m.prevTheta;
+        if (dTheta >  Math.PI) dTheta -= TAU;
+        if (dTheta < -Math.PI) dTheta += TAU;
+        const v = dTheta / dt;
+        m.thetaDot = smooth * v + (1 - smooth) * m.thetaDot;
+      } else if (m.prevTheta === null) {
+        m.thetaDot = 0;
+      }
+      m.prevTheta = theta;
+    };
+    updateVel(motorState.A, thetaA);
+    updateVel(motorState.B, thetaB);
+
+    // When paused or dragged, decay velocity toward zero
+    if (!gait.playing && !drag.active) {
+      motorState.A.thetaDot *= 0.88;
+      motorState.B.thetaDot *= 0.88;
+    }
+
+    // Static torque estimate
+    // W = m*g (N), lever arms A→P and B→P in mm, split 50/50 → torque in N·mm
+    if (Pactual) {
+      const W = dynamics.loadMass * dynamics.g;   // N
+      const Ax = -state.d / 2, Bx = state.d / 2;
+      // τ = 0.5 * W * horizontal lever arm  (sign: CCW positive)
+      motorState.A.torque = -0.5 * W * (Pactual.x - Ax);
+      motorState.B.torque = -0.5 * W * (Pactual.x - Bx);
+    }
+  }
+
+  /* =========================================================
+     RL MODULE
+     ========================================================= */
+  class TinyMLP {
+    constructor(sizes) {
+      this.sizes = sizes.slice();
+      this.layers = [];
+      let n = 0;
+      for (let i = 0; i < sizes.length - 1; i++) {
+        const inS = sizes[i], outS = sizes[i + 1];
+        this.layers.push({ inS, outS, wOff: n, bOff: n + inS * outS });
+        n += inS * outS + outS;
+      }
+      this.numParams = n;
+    }
+    forward(theta, x) {
+      let a = x;
+      for (let li = 0; li < this.layers.length; li++) {
+        const L = this.layers[li];
+        const last = (li === this.layers.length - 1);
+        const out = new Array(L.outS);
+        for (let j = 0; j < L.outS; j++) {
+          let s = theta[L.bOff + j];
+          const base = L.wOff + j * L.inS;
+          for (let i = 0; i < L.inS; i++) s += theta[base + i] * a[i];
+          out[j] = last ? s : Math.tanh(s);
+        }
+        a = out;
+      }
+      return a;
+    }
+  }
+
+  const ML = {
+    cfg: {
+      hidden: [16, 16],
+      popSize: 48,
+      nElite: 12,
+      sigma0: 0.7,
+      sigmaMin: 0.02,
+      sigmaDecay: 0.988,
+      targetsPerEval: 10,
+      gensPerFrame: 3,
+      maxGens: 600,
+    },
+    policy: null,
+    thetaStar: null,
+    bestTheta: null,
+    sigma: 0,
+    generation: 0,
+    bestFitness: -Infinity,
+    history: [],
+    training: false,
+    useLearned: false,
+    _spare: null,
+    _rafId: 0,
+  };
+
+  ML.init = function () {
+    ML.policy = new TinyMLP([2, ...ML.cfg.hidden, 2]);
+    ML.thetaStar = new Float32Array(ML.policy.numParams);
+    for (let i = 0; i < ML.thetaStar.length; i++) {
+      ML.thetaStar[i] = (Math.random() * 2 - 1) * 0.35;
+    }
+    const lastL = ML.policy.layers[ML.policy.layers.length - 1];
+    ML.thetaStar[lastL.bOff + 0] = -2.5;
+    ML.thetaStar[lastL.bOff + 1] = -0.6;
+
+    ML.bestTheta = ML.thetaStar.slice();
+    ML.sigma = ML.cfg.sigma0;
+    ML.generation = 0;
+    ML.bestFitness = -Infinity;
+    ML.history = [];
+  };
+
+  ML.gaussian = function () {
+    if (ML._spare !== null) { const s = ML._spare; ML._spare = null; return s; }
+    let u, v, s;
+    do {
+      u = Math.random() * 2 - 1;
+      v = Math.random() * 2 - 1;
+      s = u * u + v * v;
+    } while (s >= 1 || s === 0);
+    const m = Math.sqrt(-2 * Math.log(s) / s);
+    ML._spare = v * m;
+    return u * m;
+  };
+
+  ML.normalizeInput = function (x, y) {
+    const sx = state.d / 2 + state.L1 + state.L2;
+    const sy = state.L1 + state.L2;
+    return [x / sx, y / sy];
+  };
+
+  ML.sampleTargets = function (n) {
+    const out = [];
+    const r = gait.radius, cx = gait.cx, cy = gait.cy;
+    for (let i = 0; i < n; i++) {
+      const phi = Math.random() * TAU;
+      const rr = r * (0.85 + Math.random() * 0.3);
+      out.push({ x: cx + Math.cos(phi) * rr, y: cy + Math.sin(phi) * rr });
+    }
+    return out;
+  };
+
+  ML.evaluate = function (theta, targets) {
+    let total = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
+      const a = ML.policy.forward(theta, ML.normalizeInput(t.x, t.y));
+      const P = forwardKinematics(a[0], a[1]);
+      if (!P) { total += 1e5; continue; }
+      const dx = P.x - t.x, dy = P.y - t.y;
+      total += dx * dx + dy * dy;
+    }
+    return -total / targets.length;
+  };
+
+  ML.step = function () {
+    const C = ML.cfg;
+    const N = ML.policy.numParams;
+    const tg = ML.sampleTargets(C.targetsPerEval);
+
+    const pop = new Array(C.popSize);
+    for (let k = 0; k < C.popSize; k++) {
+      const cand = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        cand[i] = ML.thetaStar[i] + ML.gaussian() * ML.sigma;
+      }
+      pop[k] = { theta: cand, fit: ML.evaluate(cand, tg) };
+    }
+    pop.sort((a, b) => b.fit - a.fit);
+
+    const elites = pop.slice(0, C.nElite);
+    const newMean = new Float32Array(N);
+    for (const e of elites)
+      for (let i = 0; i < N; i++) newMean[i] += e.theta[i];
+    for (let i = 0; i < N; i++) newMean[i] /= elites.length;
+
+    ML.thetaStar = newMean;
+    ML.sigma = Math.max(C.sigmaMin, ML.sigma * C.sigmaDecay);
+    ML.generation++;
+
+    const topFit = elites[0].fit;
+    if (topFit > ML.bestFitness) {
+      ML.bestFitness = topFit;
+      ML.bestTheta = elites[0].theta.slice();
+    }
+    ML.history.push(topFit);
+    if (ML.history.length > 400) ML.history.shift();
+  };
+
+  ML.trainLoop = function () {
+    if (!ML.training) return;
+    const t0 = performance.now();
+    let n = 0;
+    while (performance.now() - t0 < 12 && n < ML.cfg.gensPerFrame) {
+      ML.step();
+      n++;
+      if (ML.generation >= ML.cfg.maxGens) { ML.stopTraining(); break; }
+    }
+    ML.updateHUD();
+    ML.drawChart();
+    if (ML.training) ML._rafId = requestAnimationFrame(ML.trainLoop);
+  };
+
+  ML.startTraining = function () {
+    if (ML.training) return;
+    if (!ML.policy) ML.init();
+    ML.training = true;
+    const b = document.getElementById('ml-train');
+    if (b) { b.textContent = 'Stop'; b.classList.add('active'); }
+    ML.trainLoop();
+  };
+  ML.stopTraining = function () {
+    ML.training = false;
+    const b = document.getElementById('ml-train');
+    if (b) { b.textContent = 'Train'; b.classList.remove('active'); }
+    if (ML._rafId) cancelAnimationFrame(ML._rafId);
+    ML._rafId = 0;
+  };
+  ML.reset = function () {
+    ML.stopTraining();
+    ML.init();
+    ML.updateHUD();
+    ML.drawChart();
+  };
+
+  ML.updateHUD = function () {
+    const g = document.getElementById('ml-gen');
+    const f = document.getElementById('ml-fit');
+    const e = document.getElementById('ml-err');
+    const m = document.getElementById('ml-mode');
+    if (g) g.textContent = ML.generation;
+    if (f) f.textContent = ML.bestFitness === -Infinity ? '—' : ML.bestFitness.toFixed(0);
+    if (e) e.textContent = ML.bestFitness === -Infinity
+      ? '—' : Math.sqrt(Math.max(0, -ML.bestFitness)).toFixed(2) + ' mm';
+    if (m) {
+      m.textContent = ML.useLearned ? 'Learned' : 'Analytic';
+      m.className = ML.useLearned ? 'ok' : '';
+    }
+  };
+
+  ML.drawChart = function () {
+    const cv = document.getElementById('ml-chart');
+    if (!cv) return;
+    const c = cv.getContext('2d');
+    const w = cv.width, h = cv.height;
+    c.clearRect(0, 0, w, h);
+    c.fillStyle = 'rgba(10,16,25,0.75)'; c.fillRect(0, 0, w, h);
+    c.strokeStyle = 'rgba(56,189,248,0.15)'; c.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+    const hist = ML.history;
+    if (hist.length < 2) {
+      c.fillStyle = 'rgba(124,139,161,0.6)';
+      c.font = '10px ui-monospace, monospace';
+      c.fillText('fitness curve appears here', 8, h / 2 + 3);
+      return;
+    }
+    const errs = hist.map(v => Math.sqrt(Math.max(1e-6, -v)));
+    let mn = Infinity, mx = -Infinity;
+    for (const e of errs) { if (e < mn) mn = e; if (e > mx) mx = e; }
+    if (mx - mn < 1e-6) mx = mn + 1;
+
+    c.beginPath();
+    for (let i = 0; i < errs.length; i++) {
+      const x = (i / (errs.length - 1)) * (w - 12) + 6;
+      const t = (errs[i] - mn) / (mx - mn);
+      const y = h - 6 - t * (h - 12);
+      i ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+    c.strokeStyle = '#22d3ee'; c.lineWidth = 1.6; c.stroke();
+
+    c.lineTo(w - 6, h - 6); c.lineTo(6, h - 6); c.closePath();
+    const grad = c.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(34,211,238,0.28)');
+    grad.addColorStop(1, 'rgba(34,211,238,0)');
+    c.fillStyle = grad; c.fill();
+  };
+
+  /* =========================================================
+     CHART UI
+     ========================================================= */
+  const chartSection  = document.getElementById('chart-section');
+  const chartCollapse = document.getElementById('chart-collapse');
+  const chartPop      = document.getElementById('chart-pop');
+  const chartHost     = document.getElementById('chart-host');
+  const chartBody     = document.getElementById('chart-body');
+  const floatWin      = document.getElementById('chart-float');
+  const floatBody     = document.getElementById('float-body');
+  const floatHead     = document.getElementById('float-head');
+  const floatDock     = document.getElementById('float-dock');
+  const stageEl       = document.getElementById('stage');
+
+  let chartExpanded = false;
+  let chartFloating = false;
+
+  function setCollapsed(collapsed) {
+    chartExpanded = !collapsed;
+    chartSection.classList.toggle('collapsed', collapsed);
+    chartCollapse.textContent = collapsed ? '▸' : '▾';
+  }
+  chartCollapse.addEventListener('click', () => setCollapsed(chartExpanded));
+
+  function setFloating(floating) {
+    chartFloating = floating;
+    const cv = document.getElementById('ml-chart');
+    if (floating) {
+      floatBody.appendChild(chartHost);
+      cv.width = 400; cv.height = 130;
+      floatWin.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        const sr = stageEl.getBoundingClientRect();
+        floatWin.style.left = Math.max(8, sr.width  - floatWin.offsetWidth  - 18) + 'px';
+        floatWin.style.top  = Math.max(8, sr.height - floatWin.offsetHeight - 18) + 'px';
+      });
+      chartBody.style.display = 'none';
+      chartPop.textContent = '⤓';
+    } else {
+      chartBody.appendChild(chartHost);
+      cv.width = 290; cv.height = 66;
+      floatWin.classList.add('hidden');
+      chartBody.style.display = '';
+      chartPop.textContent = '⤢';
+    }
+    ML.drawChart();
+  }
+  chartPop.addEventListener('click', () => setFloating(!chartFloating));
+  floatDock.addEventListener('click', () => setFloating(false));
+
+  let floatDrag = null;
+  floatHead.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    const rect = floatWin.getBoundingClientRect();
+    floatDrag = { offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
+    try { floatHead.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  floatHead.addEventListener('pointermove', (e) => {
+    if (!floatDrag) return;
+    const sr = stageEl.getBoundingClientRect();
+    let x = e.clientX - sr.left - floatDrag.offsetX;
+    let y = e.clientY - sr.top  - floatDrag.offsetY;
+    x = Math.max(0, Math.min(sr.width  - floatWin.offsetWidth,  x));
+    y = Math.max(0, Math.min(sr.height - floatWin.offsetHeight, y));
+    floatWin.style.left = x + 'px';
+    floatWin.style.top  = y + 'px';
+  });
+  const endFloatDrag = (e) => {
+    if (!floatDrag) return;
+    floatDrag = null;
+    try { floatHead.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  floatHead.addEventListener('pointerup', endFloatDrag);
+  floatHead.addEventListener('pointercancel', endFloatDrag);
+
+  /* =========================================================
+     DRAWING
+     ========================================================= */
+  function drawGrid() {
+    const x0 = (0 - ox) / scale;
+    const x1 = (W - ox) / scale;
+    const yTop = oy / scale;
+    const yBot = (oy - H) / scale;
+
+    const candidates = [1,2,5,10,20,25,50,100,200,250,500,1000,2000,5000];
+    let minor = candidates[candidates.length - 1];
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i] * scale >= 45) { minor = candidates[i]; break; }
+    }
+    const major = minor * 5;
+
+    const lineSet = (step, style, lw) => {
+      ctx.beginPath();
+      const startX = Math.ceil(x0 / step) * step;
+      for (let x = startX; x <= x1; x += step) {
+        const X = Math.round(w2sx(x)) + 0.5;
+        ctx.moveTo(X, 0); ctx.lineTo(X, H);
+      }
+      const startY = Math.ceil(yBot / step) * step;
+      for (let y = startY; y <= yTop; y += step) {
+        const Y = Math.round(w2sy(y)) + 0.5;
+        ctx.moveTo(0, Y); ctx.lineTo(W, Y);
+      }
+      ctx.lineWidth = lw; ctx.strokeStyle = style; ctx.stroke();
+    };
+    lineSet(minor, 'rgba(148,163,184,0.055)', 1);
+    lineSet(major, 'rgba(148,163,184,0.115)', 1);
+
+    const ax = Math.round(w2sx(0)) + 0.5;
+    const ay = Math.round(w2sy(0)) + 0.5;
+
+    ctx.beginPath();
+    ctx.moveTo(0, ay); ctx.lineTo(W, ay);
+    ctx.moveTo(ax, 0); ctx.lineTo(ax, H);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(96,165,250,0.32)';
+    ctx.stroke();
+
+    ctx.beginPath(); ctx.arc(ax, ay, 3.4, 0, TAU);
+    ctx.fillStyle = 'rgba(147,197,253,0.75)'; ctx.fill();
+
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(124,139,161,0.75)';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('O (0,0)', ax + 8, ay + 7);
+  }
+
+  function drawWorkspace(A, B, R) {
+    const ax = w2sx(A.x), ay = w2sy(A.y);
+    const bx = w2sx(B.x), by = w2sy(B.y);
+    const r  = R * scale;
+
+    ctx.save();
+    ctx.beginPath(); ctx.arc(ax, ay, r, 0, TAU); ctx.clip();
+    ctx.beginPath(); ctx.arc(bx, by, r, 0, TAU); ctx.clip();
+    ctx.fillStyle = 'rgba(56,189,248,0.045)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+
+    ctx.save();
+    ctx.setLineDash([7, 8]);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(56,189,248,0.22)';
+    ctx.beginPath(); ctx.arc(ax, ay, r, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(bx, by, r, 0, TAU); ctx.stroke();
+
+    const ri = Math.abs(state.L1 - state.L2) * scale;
+    if (ri > 2) {
+      ctx.strokeStyle = 'rgba(248,113,113,0.20)';
+      ctx.beginPath(); ctx.arc(ax, ay, ri, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx, by, ri, 0, TAU); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /* Draw the gait circle centred at (cxWorld, cyWorld) */
+  function drawGaitCircle(cxWorld, cyWorld, radius, isPreview) {
+    const cx = w2sx(cxWorld);
+    const cy = w2sy(cyWorld);
+    const r  = radius * scale;
+
+    const strokeColor = isPreview
+      ? 'rgba(34,211,238,0.9)'
+      : 'rgba(251,191,36,0.6)';
+    const dash = isPreview ? [4, 4] : [5, 6];
+
+    ctx.save();
+    ctx.setLineDash(dash);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU);
+    ctx.lineWidth = isPreview ? 2 : 1.4;
+    ctx.strokeStyle = strokeColor;
+    ctx.stroke();
+    ctx.restore();
+
+    // centre crosshair
+    ctx.beginPath(); ctx.arc(cx, cy, 2.8, 0, TAU);
+    ctx.fillStyle = isPreview ? 'rgba(34,211,238,0.95)' : 'rgba(251,191,36,0.75)';
+    ctx.fill();
+
+    // short cross lines through the centre
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, cy); ctx.lineTo(cx + 7, cy);
+    ctx.moveTo(cx, cy - 7); ctx.lineTo(cx, cy + 7);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = isPreview ? 'rgba(34,211,238,0.5)' : 'rgba(251,191,36,0.4)';
+    ctx.stroke();
+  }
+
+  function drawGroundLine() {
+    // Dashed "ground" reference at the current gait centre Y
+    ctx.save();
+    ctx.setLineDash([10, 10]);
+    const gx0 = w2sx(-(state.L1 * 1.4));
+    const gx1 = w2sx( (state.L1 * 1.4));
+    const gy  = w2sy(gait.cy);
+    ctx.beginPath();
+    ctx.moveTo(gx0, gy); ctx.lineTo(gx1, gy);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(251,191,36,0.32)';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawTrail() {
+    if (trail.length < 2) return;
+    ctx.lineCap = 'round';
+    for (let i = 1; i < trail.length; i++) {
+      const t = i / trail.length;
+      const p0 = trail[i - 1], p1 = trail[i];
+      ctx.beginPath();
+      ctx.moveTo(w2sx(p0.x), w2sy(p0.y));
+      ctx.lineTo(w2sx(p1.x), w2sy(p1.y));
+      ctx.lineWidth = 1.2 + 2.4 * t;
+      ctx.strokeStyle = 'rgba(52,211,153,' + (0.03 + 0.4 * t * t).toFixed(3) + ')';
+      ctx.stroke();
+    }
+  }
+
+  function drawLink(p, q, width, color) {
+    const x1 = w2sx(p.x), y1 = w2sy(p.y);
+    const x2 = w2sx(q.x), y2 = w2sy(q.y);
+    ctx.lineCap = 'round';
+
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.lineWidth = width + 5;
+    ctx.strokeStyle = 'rgba(3,7,14,0.9)'; ctx.stroke();
+
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color; ctx.stroke();
+
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.lineWidth = Math.max(1, width * 0.24);
+    ctx.strokeStyle = 'rgba(255,255,255,0.30)'; ctx.stroke();
+  }
+
+  function drawJoint(p, color, r) {
+    const x = w2sx(p.x), y = w2sy(p.y);
+    ctx.beginPath(); ctx.arc(x, y, r + 2.5, 0, TAU);
+    ctx.fillStyle = 'rgba(3,7,14,0.95)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
+    ctx.fillStyle = '#0b121c'; ctx.fill();
+    ctx.lineWidth = 2.6; ctx.strokeStyle = color; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, TAU);
+    ctx.fillStyle = color; ctx.fill();
+  }
+
+  function drawGround(A, B) {
+    const ax = w2sx(A.x), ay = w2sy(A.y);
+    const bx = w2sx(B.x), by = w2sy(B.y);
+
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 9;
+    ctx.strokeStyle = 'rgba(3,7,14,0.9)'; ctx.stroke();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#334155'; ctx.stroke();
+
+    ctx.save();
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = 'rgba(100,116,139,0.5)';
+    const n = Math.max(6, Math.round(Math.abs(bx - ax) / 14));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = ax + (bx - ax) * t;
+      const y = ay + (by - ay) * t;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 4);
+      ctx.lineTo(x - 6, y - 13);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(ax - 9, ay - 13); ctx.lineTo(bx + 9, by - 13);
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(100,116,139,0.55)';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawMotor(center, theta, color) {
+    const x = w2sx(center.x), y = w2sy(center.y);
+
+    ctx.beginPath(); ctx.arc(x, y, 15, 0, TAU);
+    const g = ctx.createRadialGradient(x - 4, y - 5, 1, x, y, 16);
+    g.addColorStop(0, '#1e293b');
+    g.addColorStop(1, '#0a0f17');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(148,163,184,0.4)'; ctx.stroke();
+
+    if (theta !== null && theta !== undefined) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(-theta) * 13, y + Math.sin(-theta) * 13);
+      ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+      ctx.strokeStyle = color; ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(-theta) * 13, y + Math.sin(-theta) * 13, 2.6, 0, TAU);
+      ctx.fillStyle = color; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, TAU);
+    ctx.fillStyle = 'rgba(226,232,240,0.85)'; ctx.fill();
+  }
+
+  function drawAngleArc(center, theta, radius, color) {
+    if (theta === null || theta === undefined) return;
+    const x = w2sx(center.x), y = w2sy(center.y);
+
+    ctx.save();
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + radius + 14, y);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(148,163,184,0.32)';
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, -theta, theta > 0);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.75; ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawEffector(P, mode) {
+    const x = w2sx(P.x), y = w2sy(P.y);
+
+    let core = '#34d399';
+    let halo = 'rgba(52,211,153,';
+    if (mode === 'invalid') { core = '#f87171'; halo = 'rgba(248,113,113,'; }
+    else if (mode === 'learned') { core = '#a78bfa'; halo = 'rgba(167,139,250,'; }
+    else if (mode === 'drag') { core = '#fbbf24'; halo = 'rgba(251,191,36,'; }
+    else if (mode === 'hover') { core = '#67e8f9'; halo = 'rgba(103,232,249,'; }
+
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 34);
+    g.addColorStop(0, halo + '0.42)');
+    g.addColorStop(1, halo + '0)');
+    ctx.beginPath(); ctx.arc(x, y, 34, 0, TAU);
+    ctx.fillStyle = g; ctx.fill();
+
+    ctx.beginPath(); ctx.arc(x, y, 13, 0, TAU);
+    ctx.fillStyle = 'rgba(6,12,20,0.85)'; ctx.fill();
+    ctx.lineWidth = 2.6; ctx.strokeStyle = core; ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x - 19, y); ctx.lineTo(x - 6, y);
+    ctx.moveTo(x + 6, y);  ctx.lineTo(x + 19, y);
+    ctx.moveTo(x, y - 19); ctx.lineTo(x, y - 6);
+    ctx.moveTo(x, y + 6);  ctx.lineTo(x, y + 19);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = halo + '0.7)'; ctx.stroke();
+
+    ctx.beginPath(); ctx.arc(x, y, 4.2, 0, TAU);
+    ctx.fillStyle = core; ctx.fill();
+  }
+
+  function drawTargetGhost(P) {
+    const x = w2sx(P.x), y = w2sy(P.y);
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(x, y, 20, 0, TAU);
+    ctx.strokeStyle = 'rgba(251,191,36,0.8)';
+    ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+
+    ctx.beginPath(); ctx.arc(x, y, 2.4, 0, TAU);
+    ctx.fillStyle = 'rgba(251,191,36,0.85)'; ctx.fill();
+  }
+
+  /* =========================================================
+     MAIN RENDER
+     ========================================================= */
+  function render(targetPoint, dt) {
+    const sol = computeSolution(targetPoint);
+
+    let thetaA = sol.thetaA;
+    let thetaB = sol.thetaB;
+    let JA = sol.JA, JB = sol.JB;
+    let Pactual = targetPoint;
+    let learned = false;
+
+    if (ML.useLearned && ML.policy) {
+      learned = true;
+      const out = ML.policy.forward(
+        ML.thetaStar, ML.normalizeInput(targetPoint.x, targetPoint.y));
+      thetaA = out[0]; thetaB = out[1];
+
+      const A = { x: -state.d / 2, y: 0 };
+      const B = { x:  state.d / 2, y: 0 };
+      JA = { x: A.x + state.L1 * Math.cos(thetaA), y: A.y + state.L1 * Math.sin(thetaA) };
+      JB = { x: B.x + state.L1 * Math.cos(thetaB), y: B.y + state.L1 * Math.sin(thetaB) };
+
+      const Pfk = forwardKinematics(thetaA, thetaB);
+      if (Pfk) Pactual = Pfk;
+    }
+
+    lastEffectorWorld = { x: Pactual.x, y: Pactual.y };
+
+    /* Dynamics update */
+    updateDynamics(thetaA, thetaB, Pactual, dt);
+
+    /* Trail */
+    if (state.showTrail) {
+      const last = trail[trail.length - 1];
+      if (!last || Math.hypot(last.x - Pactual.x, last.y - Pactual.y) > 0.6) {
+        trail.push({ x: Pactual.x, y: Pactual.y });
+        if (trail.length > TRAIL_MAX) trail.shift();
+      }
+    } else if (trail.length) trail.length = 0;
+
+    /* Clear */
+    ctx.clearRect(0, 0, W, H);
+
+    /* Layers */
+    if (state.showGrid) drawGrid();
+    if (state.showWorkspace) drawWorkspace(sol.A, sol.B, state.L1 + state.L2);
+
+    if (state.showPath) {
+      if (drag.active && drag.manual) {
+        // Preview: new centre at the drag point
+        drawGaitCircle(drag.manual.x, drag.manual.y, gait.radius, true);
+      } else {
+        drawGaitCircle(gait.cx, gait.cy, gait.radius, false);
+        drawGroundLine();
+      }
+    }
+    drawTrail();
+
+    /* Mechanism */
+    drawGround(sol.A, sol.B);
+    if (JA) drawLink(sol.A, JA, 10, '#38bdf8');
+    if (JB) drawLink(sol.B, JB, 10, '#38bdf8');
+    if (JA) drawLink(JA, Pactual, 8, '#a78bfa');
+    if (JB) drawLink(JB, Pactual, 8, '#a78bfa');
+
+    drawAngleArc(sol.A, thetaA, 44, '#38bdf8');
+    drawAngleArc(sol.B, thetaB, 44, '#a78bfa');
+
+    drawMotor(sol.A, thetaA, '#38bdf8');
+    drawMotor(sol.B, thetaB, '#a78bfa');
+
+    if (JA) drawJoint(JA, '#7dd3fc', 6);
+    if (JB) drawJoint(JB, '#c4b5fd', 6);
+
+    drawTargetGhost(targetPoint);
+
+    let effectorMode = 'valid';
+    if (!sol.valid) effectorMode = 'invalid';
+    else if (drag.active) effectorMode = 'drag';
+    else if (drag.hovering) effectorMode = 'hover';
+    else if (learned) effectorMode = 'learned';
+
+    drawEffector(Pactual, effectorMode);
+
+    if (learned) {
+      const ex = w2sx(Pactual.x), ey = w2sy(Pactual.y);
+      const tx = w2sx(targetPoint.x), ty = w2sy(targetPoint.y);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty); ctx.lineTo(ex, ey);
+      ctx.strokeStyle = 'rgba(251,191,36,0.55)';
+      ctx.lineWidth = 1.2; ctx.stroke();
+    }
+
+    updateHUD(targetPoint, Pactual, thetaA, thetaB, learned, sol.valid);
+    updateDynamicsHUD();
+  }
+
+  /* =========================================================
+     HUD
+     ========================================================= */
+  function fmtDeg(rad) {
+    if (rad === null || rad === undefined || !isFinite(rad)) return '—';
+    let deg = (rad * 180) / Math.PI;
+    deg = ((deg + 180) % 360 + 360) % 360 - 180;
+    return (deg >= 0 ? '+' : '') + deg.toFixed(2) + '°';
+  }
+
+  function fmtSigned(v, digits, unit) {
+    if (!isFinite(v)) return '—';
+    const s = v >= 0 ? '+' : '';
+    return s + v.toFixed(digits) + (unit ? ' ' + unit : '');
+  }
+
+  const el = {
+    tgt:  document.getElementById('t-tgt'),
+    ee:   document.getElementById('t-ee'),
+    a:    document.getElementById('t-a'),
+    b:    document.getElementById('t-b'),
+    err:  document.getElementById('t-err'),
+    mode: document.getElementById('t-mode'),
+    wa:   document.getElementById('d-wa'),
+    wb:   document.getElementById('d-wb'),
+    ta:   document.getElementById('d-ta'),
+    tb:   document.getElementById('d-tb'),
+  };
+
+  function updateHUD(target, actual, tA, tB, learned, valid) {
+    el.tgt.textContent = '(' + target.x.toFixed(1) + ', ' + target.y.toFixed(1) + ')';
+    el.ee.textContent  = '(' + actual.x.toFixed(1) + ', ' + actual.y.toFixed(1) + ')';
+    el.a.textContent   = fmtDeg(tA);
+    el.b.textContent   = fmtDeg(tB);
+
+    const errMm = Math.hypot(actual.x - target.x, actual.y - target.y);
+    el.err.textContent = errMm.toFixed(2) + ' mm';
+    el.err.className = errMm < 1 ? 'ok' : errMm < 10 ? '' : 'warn';
+
+    el.mode.textContent = !valid ? 'Unreachable' : (learned ? 'Learned' : 'Analytic');
+    el.mode.className = !valid ? 'bad' : (learned ? 'ok' : '');
+  }
+
+  function updateDynamicsHUD() {
+    const A = motorState.A, B = motorState.B;
+
+    // Velocity in deg/s
+    el.wa.textContent = fmtSigned(A.thetaDot * 180 / Math.PI, 1, '°/s');
+    el.wb.textContent = fmtSigned(B.thetaDot * 180 / Math.PI, 1, '°/s');
+
+    // Torque in N·mm (signed)
+    el.ta.textContent = fmtSigned(A.torque, 1, 'N·mm');
+    el.tb.textContent = fmtSigned(B.torque, 1, 'N·mm');
+  }
+
+  /* =========================================================
+     POINTER INTERACTION — drag to reposition the walker centre
+     ========================================================= */
+  function pointerWorld(evt) {
+    const r = canvas.getBoundingClientRect();
+    return {
+      x: ((evt.clientX - r.left) - ox) / scale,
+      y: (oy - (evt.clientY - r.top)) / scale,
+    };
+  }
+
+  function screenDistToEffector(evt) {
+    if (!lastEffectorWorld) return Infinity;
+    const r = canvas.getBoundingClientRect();
+    const sx = evt.clientX - r.left;
+    const sy = evt.clientY - r.top;
+    return Math.hypot(sx - w2sx(lastEffectorWorld.x), sy - w2sy(lastEffectorWorld.y));
+  }
+
+  function updateCursor() {
+    canvas.style.cursor = drag.active
+      ? 'grabbing'
+      : drag.hovering
+        ? 'grab'
+        : 'crosshair';
+  }
+
+  canvas.addEventListener('pointerdown', (evt) => {
+    if (screenDistToEffector(evt) > 36) return;
+    evt.preventDefault();
+
+    // Cancel any in-flight settle
+    settle.active = false;
+
+    const p = pointerWorld(evt);
+    drag.active = true;
+    drag.offset = {
+      x: p.x - lastEffectorWorld.x,
+      y: p.y - lastEffectorWorld.y,
+    };
+    drag.manual = clampToWorkspace(lastEffectorWorld);
+
+    try { canvas.setPointerCapture(evt.pointerId); } catch (_) {}
+    updateCursor();
+  });
+
+  canvas.addEventListener('pointermove', (evt) => {
+    if (drag.active) {
+      const p = pointerWorld(evt);
+      drag.manual = clampToWorkspace({
+        x: p.x - drag.offset.x,
+        y: p.y - drag.offset.y,
+      });
+    } else {
+      const near = screenDistToEffector(evt) < 36;
+      if (near !== drag.hovering) {
+        drag.hovering = near;
+        updateCursor();
+      }
+    }
+  });
+
+  const endDrag = (evt) => {
+    if (!drag.active) return;
+    drag.active = false;
+    try { canvas.releasePointerCapture(evt.pointerId); } catch (_) {}
+
+    if (drag.manual) {
+      const dropPoint = { x: drag.manual.x, y: drag.manual.y };
+
+      // ── NEW: the drop point becomes the new circle centre ──
+      gait.cx = dropPoint.x;
+      gait.cy = dropPoint.y;
+
+      // Smooth settle: fly from the drop point out to the perimeter
+      settle.active = true;
+      settle.t = 0;
+      settle.from = dropPoint;
+      settle.to = gaitTarget(gait.phase);
+
+      // Recentre the view so the walker stays in frame
+      computeView();
+    }
+
+    drag.manual = null;
+    trail.length = 0;
+    updateCursor();
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointerleave', () => {
+    if (!drag.active) {
+      drag.hovering = false;
+      updateCursor();
+    }
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  /* =========================================================
+     GAIT LOOP
+     ========================================================= */
+  let lastT = performance.now();
+  let lastDt = 1 / 60;
+
+  function gaitTarget(phase) {
+    const r = gait.radius;
+    return {
+      x: gait.cx - r * Math.cos(phase),
+      y: gait.cy + r * Math.sin(phase),
+    };
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+    lastDt = dt;
+
+    let target;
+
+    if (drag.manual) {
+      // Manual override — walker is frozen, effector follows the pointer
+      target = drag.manual;
+    } else if (settle.active) {
+      // Smoothly fly from the drop point to the new circle perimeter
+      settle.t += dt;
+      if (settle.t >= settle.duration) {
+        settle.active = false;
+        target = gaitTarget(gait.phase);
+      } else {
+        const a = settle.t / settle.duration;
+        const e = a * a * (3 - 2 * a);   // smoothstep
+        target = {
+          x: settle.from.x + (settle.to.x - settle.from.x) * e,
+          y: settle.from.y + (settle.to.y - settle.from.y) * e,
+        };
+      }
+    } else {
+      // Normal walking
+      if (gait.playing) {
+        gait.phase += gait.speed * dt;
+        if (gait.phase > TAU) gait.phase -= TAU;
+      }
+      target = gaitTarget(gait.phase);
+    }
+
+    render(target, dt);
+    requestAnimationFrame(frame);
+  }
+
+  /* =========================================================
+     UI BINDINGS
+     ========================================================= */
+  function bindSlider(id, key, labelEl, fmt, target) {
+    const input = document.getElementById(id);
+    const update = () => {
+      const v = parseFloat(input.value);
+      if (target === 'gait') gait[key] = v;
+      else if (target === 'dynamics') dynamics[key] = v;
+      else state[key] = v;
+      labelEl.textContent = fmt ? fmt(v) : v.toFixed(0);
+      trail.length = 0;
+      computeView();
+    };
+    input.addEventListener('input', update);
+    update();
+  }
+
+  const vD    = document.getElementById('v-d');
+  const vL1   = document.getElementById('v-l1');
+  const vL2   = document.getElementById('v-l2');
+  const vGR   = document.getElementById('v-gr');
+  const vGY   = document.getElementById('v-gy');
+  const vSP   = document.getElementById('v-sp');
+  const vMass = document.getElementById('v-mass');
+
+  bindSlider('s-d',  'd',  vD,  null, 'state');
+  bindSlider('s-l1', 'L1', vL1, null, 'state');
+  bindSlider('s-l2', 'L2', vL2, null, 'state');
+  bindSlider('s-gr', 'radius', vGR, null, 'gait');
+  bindSlider('s-gy', 'cy',     vGY, (v) => '−' + Math.abs(v).toFixed(0), 'gait');
+  bindSlider('s-sp', 'speed',  vSP, (v) => v.toFixed(1), 'gait');
+  bindSlider('s-mass','loadMass', vMass, (v) => v.toFixed(2), 'dynamics');
+
+  /* Walking toggle */
+  const walkBtn = document.getElementById('walk-toggle');
+  function refreshWalkButton() {
+    if (gait.playing) {
+      walkBtn.textContent = '⏸  Pause Walking';
+      walkBtn.classList.remove('paused');
+    } else {
+      walkBtn.textContent = '▶  Resume Walking';
+      walkBtn.classList.add('paused');
+    }
+  }
+  walkBtn.addEventListener('click', () => {
+    gait.playing = !gait.playing;
+    refreshWalkButton();
+  });
+  refreshWalkButton();
+
+  document.getElementById('c-grid').addEventListener('change', (e) => state.showGrid = e.target.checked);
+  document.getElementById('c-ws').addEventListener('change',   (e) => state.showWorkspace = e.target.checked);
+  document.getElementById('c-path').addEventListener('change', (e) => state.showPath = e.target.checked);
+  document.getElementById('c-trail').addEventListener('change',(e) => {
+    state.showTrail = e.target.checked;
+    if (!e.target.checked) trail.length = 0;
+  });
+
+  document.getElementById('ml-train').addEventListener('click', () => {
+    ML.training ? ML.stopTraining() : ML.startTraining();
+  });
+  document.getElementById('ml-use').addEventListener('click', (e) => {
+    ML.useLearned = !ML.useLearned;
+    e.currentTarget.classList.toggle('active', ML.useLearned);
+    ML.updateHUD();
+    trail.length = 0;
+  });
+  document.getElementById('ml-reset').addEventListener('click', ML.reset);
+
+  document.getElementById('reset').addEventListener('click', () => {
+    state.d = DEFAULTS.d; state.L1 = DEFAULTS.L1; state.L2 = DEFAULTS.L2;
+    gait.radius = DEFAULTS.gR;
+    gait.cx = 0;
+    gait.cy = DEFAULTS.gCy;
+    gait.speed = DEFAULTS.speed;
+    gait.playing = true;
+    gait.phase = -Math.PI / 2;
+    dynamics.loadMass = DEFAULTS.mass;
+
+    document.getElementById('s-d').value  = DEFAULTS.d;
+    document.getElementById('s-l1').value = DEFAULTS.L1;
+    document.getElementById('s-l2').value = DEFAULTS.L2;
+    document.getElementById('s-gr').value = DEFAULTS.gR;
+    document.getElementById('s-gy').value = DEFAULTS.gCy;
+    document.getElementById('s-sp').value = DEFAULTS.speed;
+    document.getElementById('s-mass').value = DEFAULTS.mass;
+
+    vD.textContent  = DEFAULTS.d;
+    vL1.textContent = DEFAULTS.L1;
+    vL2.textContent = DEFAULTS.L2;
+    vGR.textContent = DEFAULTS.gR;
+    vGY.textContent = '−' + Math.abs(DEFAULTS.gCy);
+    vSP.textContent = DEFAULTS.speed.toFixed(1);
+    vMass.textContent = DEFAULTS.mass.toFixed(2);
+
+    settle.active = false;
+    trail.length = 0;
+    refreshWalkButton();
+    computeView();
+  });
+
+  /* =========================================================
+     BOOT
+     ========================================================= */
+  function boot() {
+    resize();
+    setCollapsed(true);
+    ML.init();
+    ML.updateHUD();
+    ML.drawChart();
+    updateCursor();
+    requestAnimationFrame(frame);
+  }
+
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => { resize(); trail.length = 0; })
+      .observe(canvas.parentElement);
+  }
+  window.addEventListener('resize', () => { resize(); trail.length = 0; });
+
+  boot();
+})();
+</script>
+</body>
+</html>
